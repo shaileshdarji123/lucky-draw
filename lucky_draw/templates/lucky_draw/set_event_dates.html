@@ -1,0 +1,42 @@
+{% extends 'lucky_draw/base.html' %}
+
+{% block title %}Set Event Dates - Staff Party Lucky Draw{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="fw-bold text-center mb-4">
+                        <i class="fas fa-calendar-alt me-2"></i>Set Event Dates
+                    </h3>
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            {{ form.day1_date.label_tag }}
+                            {{ form.day1_date }}
+                        </div>
+                        <div class="mb-3">
+                            {{ form.day2_date.label_tag }}
+                            {{ form.day2_date }}
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save me-2"></i>Save Dates
+                            </button>
+                            <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                            </a>
+                        </div>
+                    </form>
+                    <div class="alert alert-info mt-4">
+                        <i class="fas fa-info-circle me-2"></i>
+                        Please select the correct dates for Day 1 and Day 2 of the staff party. You can update these dates at any time.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

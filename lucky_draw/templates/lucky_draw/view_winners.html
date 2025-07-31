@@ -1,0 +1,119 @@
+{% extends 'lucky_draw/base.html' %}
+
+{% block title %}View Winners - Staff Party Lucky Draw{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-trophy fa-3x text-primary mb-3"></i>
+                        <h3 class="fw-bold">View Winners</h3>
+                        <p class="text-muted">See all lucky draw winners</p>
+                    </div>
+                    
+                    <div class="row">
+                        <!-- Day 1 Winners -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card">
+                                <div class="card-header bg-success text-white">
+                                    <h5 class="mb-0">
+                                        <i class="fas fa-star me-2"></i>Day 1 Winners
+                                        <span class="badge bg-light text-dark ms-2">{{ day1_winners|length }}</span>
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    {% if day1_winners %}
+                                        <div class="list-group list-group-flush">
+                                            {% for winner in day1_winners %}
+                                                <div class="list-group-item">
+                                                    <div class="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <h6 class="mb-1">
+                                                                <i class="fas fa-crown text-warning me-2"></i>
+                                                                {{ winner.staff.name }}
+                                                            </h6>
+                                                            <small class="text-muted">{{ winner.staff.department }}</small>
+                                                        </div>
+                                                        <div class="text-end">
+                                                            <span class="badge bg-warning text-dark">
+                                                                Winner #{{ winner.draw_order }}
+                                                            </span>
+                                                            <br>
+                                                            <small class="text-muted">
+                                                                {{ winner.drawn_at|date:"H:i" }}
+                                                            </small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <div class="text-center py-4">
+                                            <i class="fas fa-trophy fa-2x text-muted mb-3"></i>
+                                            <p class="text-muted">No winners for Day 1 yet</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Day 2 Winners -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card">
+                                <div class="card-header bg-warning text-white">
+                                    <h5 class="mb-0">
+                                        <i class="fas fa-star me-2"></i>Day 2 Winners
+                                        <span class="badge bg-light text-dark ms-2">{{ day2_winners|length }}</span>
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    {% if day2_winners %}
+                                        <div class="list-group list-group-flush">
+                                            {% for winner in day2_winners %}
+                                                <div class="list-group-item">
+                                                    <div class="d-flex justify-content-between align-items-center">
+                                                        <div>
+                                                            <h6 class="mb-1">
+                                                                <i class="fas fa-crown text-warning me-2"></i>
+                                                                {{ winner.staff.name }}
+                                                            </h6>
+                                                            <small class="text-muted">{{ winner.staff.department }}</small>
+                                                        </div>
+                                                        <div class="text-end">
+                                                            <span class="badge bg-warning text-dark">
+                                                                Winner #{{ winner.draw_order }}
+                                                            </span>
+                                                            <br>
+                                                            <small class="text-muted">
+                                                                {{ winner.drawn_at|date:"H:i" }}
+                                                            </small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <div class="text-center py-4">
+                                            <i class="fas fa-trophy fa-2x text-muted mb-3"></i>
+                                            <p class="text-muted">No winners for Day 2 yet</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mt-4">
+                        <a href="{% url 'dashboard' %}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

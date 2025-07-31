@@ -1,0 +1,97 @@
+{% extends 'lucky_draw/base.html' %}
+
+{% block title %}View Check-ins - Staff Party Lucky Draw{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-list-check fa-3x text-primary mb-3"></i>
+                        <h3 class="fw-bold">View Check-ins</h3>
+                        <p class="text-muted">See who has checked in for each day</p>
+                    </div>
+                    
+                    <div class="row">
+                        <!-- Day 1 Check-ins -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card">
+                                <div class="card-header bg-success text-white">
+                                    <h5 class="mb-0">
+                                        <i class="fas fa-calendar-day me-2"></i>Day 1 Check-ins
+                                        <span class="badge bg-light text-dark ms-2">{{ day1_checkins|length }}</span>
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    {% if day1_checkins %}
+                                        <div class="list-group list-group-flush">
+                                            {% for checkin in day1_checkins %}
+                                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <h6 class="mb-1">{{ checkin.staff.name }}</h6>
+                                                        <small class="text-muted">{{ checkin.staff.department }}</small>
+                                                    </div>
+                                                    <small class="text-muted">
+                                                        {{ checkin.checked_in_at|date:"H:i" }}
+                                                    </small>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <div class="text-center py-4">
+                                            <i class="fas fa-users fa-2x text-muted mb-3"></i>
+                                            <p class="text-muted">No check-ins for Day 1 yet</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Day 2 Check-ins -->
+                        <div class="col-md-6 mb-4">
+                            <div class="card">
+                                <div class="card-header bg-warning text-white">
+                                    <h5 class="mb-0">
+                                        <i class="fas fa-calendar-day me-2"></i>Day 2 Check-ins
+                                        <span class="badge bg-light text-dark ms-2">{{ day2_checkins|length }}</span>
+                                    </h5>
+                                </div>
+                                <div class="card-body">
+                                    {% if day2_checkins %}
+                                        <div class="list-group list-group-flush">
+                                            {% for checkin in day2_checkins %}
+                                                <div class="list-group-item d-flex justify-content-between align-items-center">
+                                                    <div>
+                                                        <h6 class="mb-1">{{ checkin.staff.name }}</h6>
+                                                        <small class="text-muted">{{ checkin.staff.department }}</small>
+                                                    </div>
+                                                    <small class="text-muted">
+                                                        {{ checkin.checked_in_at|date:"H:i" }}
+                                                    </small>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <div class="text-center py-4">
+                                            <i class="fas fa-users fa-2x text-muted mb-3"></i>
+                                            <p class="text-muted">No check-ins for Day 2 yet</p>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mt-4">
+                        <a href="{% url 'dashboard' %}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

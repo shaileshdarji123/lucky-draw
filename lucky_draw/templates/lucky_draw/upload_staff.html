@@ -1,0 +1,69 @@
+{% extends 'lucky_draw/base.html' %}
+
+{% block title %}Upload Staff List - Staff Party Lucky Draw{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-upload fa-3x text-primary mb-3"></i>
+                        <h3 class="fw-bold">Upload Staff List</h3>
+                        <p class="text-muted">Upload Excel or CSV file with staff information</p>
+                    </div>
+                    
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="mb-4">
+                            {{ form.file.label_tag }}
+                            {{ form.file }}
+                            {% if form.file.help_text %}
+                                <div class="form-text">{{ form.file.help_text }}</div>
+                            {% endif %}
+                            {% if form.file.errors %}
+                                <div class="text-danger">
+                                    {% for error in form.file.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-upload me-2"></i>Upload Staff List
+                            </button>
+                            <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                            </a>
+                        </div>
+                    </form>
+                    
+                    <div class="mt-4">
+                        <div class="alert alert-info">
+                            <h6><i class="fas fa-info-circle me-2"></i>File Format Requirements:</h6>
+                            <ul class="mb-0">
+                                <li>First column: Staff Name</li>
+                                <li>Second column: Department</li>
+                                <li>Third column: Day (1 or 2)</li>
+                                <li>Supported formats: Excel (.xlsx, .xls) or CSV</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="alert alert-warning">
+                            <h6><i class="fas fa-exclamation-triangle me-2"></i>Important Notes:</h6>
+                            <ul class="mb-0">
+                                <li>Uploading a new file will replace all existing staff data</li>
+                                <li>QR codes will be automatically generated for each staff member</li>
+                                <li>Make sure the file has headers in the first row</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

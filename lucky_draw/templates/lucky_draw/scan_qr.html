@@ -1,0 +1,189 @@
+{% extends 'lucky_draw/base.html' %}
+
+{% block title %}Scan QR Code - Staff Party Lucky Draw{% endblock %}
+
+{% block content %}
+<div class="container">
+    <input type="hidden" id="csrf-token" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-qrcode fa-3x text-primary mb-3"></i>
+                        <h3 class="fw-bold">Scan QR Code</h3>
+                        <p class="text-muted">Check-in staff using their QR codes</p>
+                    </div>
+                    
+                    <div class="qr-scanner-container mb-4">
+                        <div id="qr-reader"></div>
+                    </div>
+
+                    <div class="mb-3 text-center">
+                        <label for="qr-image-input" class="form-label fw-bold">Or select an image file:</label>
+                        <input type="file" id="qr-image-input" accept="image/*" class="form-control" style="max-width: 300px; margin: 0 auto; display: inline-block;">
+                        <button id="scan-image-btn" class="btn btn-primary mt-2" type="button">
+                            <i class="fas fa-image me-2"></i>Scan from Image
+                        </button>
+                    </div>
+                    <canvas id="qr-canvas" style="display:none;"></canvas>
+                    
+                    <div id="scan-result" class="alert alert-dismissible" style="display: none;">
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <div id="result-message"></div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <button class="btn btn-secondary" onclick="window.location.href='{% url 'dashboard' %}'">
+                            <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+<script>
+let html5QrcodeScanner = null;
+
+function onScanSuccess(decodedText, decodedResult) {
+    // Stop scanning
+    if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear();
+    }
+    processQRCode(decodedText);
+}
+
+function onScanFailure(error) {
+    // Handle scan failure, ignore
+}
+
+function processQRCode(qrData) {
+    // First, decode the QR to get staff info for confirmation
+    fetch('{% url "process_qr_scan" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.getElementById('csrf-token').value
+        },
+        body: JSON.stringify({qr_data: qrData})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Ask for confirmation before check-in
+            if (!confirm(`Check in ${data.staff_name} from ${data.department} for Day ${data.day}?`)) {
+                // If cancelled, restart scanner
+                restartScanner();
+                return;
+            }
+        }
+        showResult(data);
+    })
+    .catch(error => {
+        showResult({success: false, message: 'An error occurred while processing the QR code.'});
+    });
+}
+
+function showResult(data) {
+    const resultDiv = document.getElementById('scan-result');
+    const messageDiv = document.getElementById('result-message');
+    if (data.success) {
+        resultDiv.className = 'alert alert-success alert-dismissible';
+        messageDiv.innerHTML = `
+            <h5><i class="fas fa-check-circle me-2"></i>Check-in Successful!</h5>
+            <p><strong>${data.staff_name}</strong> from <strong>${data.department}</strong></p>
+            <p>Successfully checked in for <strong>Day ${data.day}</strong></p>
+        `;
+    } else {
+        resultDiv.className = 'alert alert-danger alert-dismissible';
+        messageDiv.innerHTML = `
+            <h5><i class="fas fa-exclamation-triangle me-2"></i>Check-in Failed</h5>
+            <p>${data.message}</p>
+        `;
+    }
+    // Add Scan Again button
+    messageDiv.innerHTML += `<div class='mt-3'><button class='btn btn-primary' id='scan-again-btn'><i class='fas fa-redo me-2'></i>Scan Again</button></div>`;
+    resultDiv.style.display = 'block';
+    document.getElementById('scan-again-btn').onclick = function() {
+        resultDiv.style.display = 'none';
+        restartScanner();
+    };
+}
+
+function restartScanner() {
+    if (html5QrcodeScanner) {
+        html5QrcodeScanner.clear();
+    }
+    setTimeout(startScanner, 300); // slight delay to avoid race
+}
+
+function startScanner() {
+    html5QrcodeScanner = new Html5QrcodeScanner(
+        "qr-reader",
+        { 
+            fps: 10, 
+            qrbox: {width: 250, height: 250},
+            aspectRatio: 1.0
+        },
+        false
+    );
+    html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+}
+
+// Use jsQR for image file scanning
+function scanImageFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.getElementById('qr-canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, img.width, img.height);
+            const imageData = ctx.getImageData(0, 0, img.width, img.height);
+            const code = jsQR(imageData.data, img.width, img.height);
+            if (code) {
+                processQRCode(code.data);
+            } else {
+                const resultDiv = document.getElementById('scan-result');
+                const messageDiv = document.getElementById('result-message');
+                resultDiv.className = 'alert alert-danger';
+                messageDiv.innerHTML = `<h5><i class='fas fa-exclamation-triangle me-2'></i>Scan Failed</h5><p>Could not detect a QR code in the selected image.</p>`;
+                resultDiv.style.display = 'block';
+                setTimeout(() => {
+                    resultDiv.style.display = 'none';
+                    startScanner();
+                }, 3000);
+            }
+        };
+        img.onerror = function() {
+            alert('Could not load the image file.');
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    startScanner();
+    document.getElementById('scan-image-btn').addEventListener('click', function() {
+        const fileInput = document.getElementById('qr-image-input');
+        if (fileInput.files.length > 0) {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.clear();
+            }
+            scanImageFile(fileInput.files[0]);
+        } else {
+            alert('Please select an image file first.');
+        }
+    });
+});
+</script>
+{% endblock %}

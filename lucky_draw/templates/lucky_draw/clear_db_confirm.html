@@ -1,0 +1,18 @@
+{% extends 'lucky_draw/base.html' %}
+{% block title %}Clear Database - Staff Party Lucky Draw{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="alert alert-danger text-center">
+        <h4 class="mb-3"><i class="fas fa-exclamation-triangle me-2"></i>Confirm Database Clear</h4>
+        <p>This will <b>delete all staff, check-ins, winners, and event settings</b>.<br>Are you sure you want to proceed?</p>
+        <form method="post">{% csrf_token %}
+          <button type="submit" class="btn btn-danger btn-lg">Yes, Clear Database</button>
+          <a href="{% url 'dashboard' %}" class="btn btn-secondary btn-lg ms-2">Cancel</a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
