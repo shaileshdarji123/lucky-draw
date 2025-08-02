@@ -11,6 +11,7 @@ from django.db import transaction
 import pandas as pd
 import random
 import json
+import os
 from .models import Staff, CheckIn, Winner, EventSettings
 from .forms import StaffUploadForm, QRCodeScanForm, EventSettingsForm
 from django.utils import timezone
@@ -140,6 +141,8 @@ def dashboard(request):
         return redirect('set_event_dates')
     day1_checkins_count = CheckIn.objects.filter(day=1).count()
     day2_checkins_count = CheckIn.objects.filter(day=2).count()
+    clear_db_env = os.getenv('CLEAR_DB_ENABLED', 'True').strip().lower()
+    clear_db_enabled = clear_db_env in ['true', '1', 'yes', 'on']
     context = {
         'total_staff': Staff.objects.count(),
         'day1_checkins': day1_checkins_count,
@@ -151,6 +154,7 @@ def dashboard(request):
         'can_draw_day2': day2_checkins_count >= 5,
         'draw_msg_day1': '' if day1_checkins_count >= 5 else 'At least 5 staff must be checked in for Day 1 to enable the draw.',
         'draw_msg_day2': '' if day2_checkins_count >= 5 else 'At least 5 staff must be checked in for Day 2 to enable the draw.',
+        'clear_db_enabled': clear_db_enabled,
     }
     return render(request, 'lucky_draw/dashboard.html', context)
 
@@ -314,16 +318,25 @@ def download_qr_codes(request):
     days = [1, 2]
     department_filter = request.GET.get('department', '')
     day_filter = request.GET.get('day', '')
+    checked_in_filter = request.GET.get('checked_in', '')
+    # Annotate staff with check-in status
+    from django.db.models import Exists, OuterRef
+    staff_list = staff_list.annotate(
+        checked_in=Exists(CheckIn.objects.filter(staff=OuterRef('pk'), day=OuterRef('day_1')))
+    )
     if department_filter:
         staff_list = staff_list.filter(department=department_filter)
     if day_filter:
         staff_list = staff_list.filter(day_1=day_filter)
+    if checked_in_filter == 'hide':
+        staff_list = staff_list.filter(checked_in=False)
     return render(request, 'lucky_draw/download_qr_codes.html', {
         'staff_list': staff_list,
         'departments': departments,
         'days': days,
         'department_filter': department_filter,
         'day_filter': day_filter,
+        'checked_in_filter': checked_in_filter,
     })
 
 @require_POST
@@ -340,11 +353,16 @@ def delete_staff(request, staff_id):
 
 @login_required
 def clear_database(request):
+    clear_db_env = os.getenv('CLEAR_DB_ENABLED', 'True').strip().lower()
+    clear_db_enabled = clear_db_env in ['true', '1', 'yes', 'on']
     if request.method == 'POST':
+        if not clear_db_enabled:
+            messages.error(request, 'Database clearing is disabled by admin.')
+            return redirect('dashboard')
         Staff.objects.all().delete()
         CheckIn.objects.all().delete()
         Winner.objects.all().delete()
         EventSettings.objects.all().delete()
         messages.success(request, 'Database cleared!')
         return redirect('dashboard')
-    return render(request, 'lucky_draw/clear_db_confirm.html')
+    return render(request, 'lucky_draw/clear_db_confirm.html', {'clear_db_enabled': clear_db_enabled})

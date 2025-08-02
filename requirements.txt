@@ -1,0 +1,7 @@
+django>=3.2
+pillow
+qrcode
+openpyxl
+pandas
+python-dotenv
+pymysql

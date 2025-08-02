@@ -6,11 +6,9 @@ class StaffAdmin(admin.ModelAdmin):
     list_display = ['name', 'department', 'day_1', 'created_at']
     list_filter = ['department', 'day_1', 'created_at']
     search_fields = ['name', 'department']
-    readonly_fields = ['qr_code', 'created_at']
+    readonly_fields = ['created_at']
     
     def get_readonly_fields(self, request, obj=None):
-        if obj:  # Editing an existing object
-            return self.readonly_fields + ('qr_code',)
         return self.readonly_fields
 
 @admin.register(CheckIn)

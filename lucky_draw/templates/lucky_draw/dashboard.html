@@ -84,7 +84,8 @@
             </div>
         </div>
         
-        <div class="col-md-3 mb-4">
+        {% if clear_db_enabled %}
+        <div class="col-md-4 mb-4">
             <div class="card feature-card bg-danger text-white" onclick="window.location.href='{% url 'clear_database' %}'">
                 <div class="feature-icon">
                     <i class="fas fa-trash-alt"></i>
@@ -93,6 +94,7 @@
                 <p class="text-white">Delete all staff, check-ins, winners, and settings</p>
             </div>
         </div>
+        {% endif %}
     </div>
     
     <!-- Lucky Draw Section -->
