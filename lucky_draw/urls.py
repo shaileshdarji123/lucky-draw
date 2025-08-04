@@ -13,6 +13,7 @@ urlpatterns = [
     path('view-winners/', views.view_winners, name='view_winners'),
     path('download-qr-codes/', views.download_qr_codes, name='download_qr_codes'),
     path('download-qr-with-label/<int:staff_id>/', views.download_qr_with_label, name='download_qr_with_label'),
+    path('preview-qr-svg/<int:staff_id>/', views.preview_qr_svg, name='preview_qr_svg'),
     path('set-event-dates/', views.set_event_dates, name='set_event_dates'),
     path('delete-staff/<int:staff_id>/', views.delete_staff, name='delete_staff'),
     path('clear-database/', views.clear_database, name='clear_database'),

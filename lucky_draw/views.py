@@ -1,8 +1,3 @@
-import os
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
-
 from django.http import HttpResponse, JsonResponse, FileResponse
 from io import BytesIO
 from django.shortcuts import render, redirect, get_object_or_404
@@ -15,21 +10,20 @@ from django.db import transaction
 import pandas as pd
 import random
 import json
-import os
 from .models import Staff, CheckIn, Winner, EventSettings
 from .forms import StaffUploadForm, QRCodeScanForm, EventSettingsForm
 from django.utils import timezone
 from datetime import date
 
+# SVG preview endpoint for QR code
 @login_required
-def download_qr_with_label(request, staff_id):
+def preview_qr_svg(request, staff_id):
     staff = get_object_or_404(Staff, id=staff_id)
     import qrcode
     try:
         from qrcode.image.svg import SvgImage
     except ImportError:
         return HttpResponse("SVG QR code generation requires qrcode >=6.1. Please upgrade the qrcode package.", status=500)
-    # Generate QR code SVG on the fly (no Pillow)
     qr_data = f"{staff.id}:{staff.day_1}"
     qr = qrcode.QRCode(
         version=1,
@@ -39,16 +33,12 @@ def download_qr_with_label(request, staff_id):
     )
     qr.add_data(qr_data)
     qr.make(fit=True)
-    # SVG image as string
     svg_img = qr.make_image(image_factory=SvgImage)
     svg_bytes = BytesIO()
     svg_img.save(svg_bytes)
     svg_bytes.seek(0)
-    # Add label below QR code in SVG
     label = f"{staff.name} | {staff.department} | Day {staff.day_1}"
     svg_content = svg_bytes.getvalue().decode('utf-8')
-    # Insert label using SVG <text> below QR code
-    # Find SVG width/height from viewBox
     import re
     m = re.search(r'viewBox="(\d+) (\d+) (\d+) (\d+)"', svg_content)
     if m:
@@ -57,8 +47,62 @@ def download_qr_with_label(request, staff_id):
         label_x = w // 2
         label_svg = f'<text x="{label_x}" y="{label_y}" text-anchor="middle" font-size="22" fill="#222">{label}</text>'
         svg_content = svg_content.replace('</svg>', label_svg + '</svg>')
-    filename = f"{staff.name.replace(' ', '-').lower()}_{staff.department.replace(' ', '-').lower()}_{staff.day_1}.svg"
-    response = HttpResponse(svg_content, content_type='image/svg+xml')
+    return HttpResponse(svg_content, content_type='image/svg+xml')
+
+import os
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
+
+
+@login_required
+def download_qr_with_label(request, staff_id):
+    staff = get_object_or_404(Staff, id=staff_id)
+    import qrcode
+    from io import BytesIO
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return HttpResponse("JPG QR code generation requires Pillow. Please install pillow.", status=500)
+    # Generate QR code as PIL image (lightweight)
+    qr_data = f"{staff.id}:{staff.day_1}"
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=6,
+        border=2,
+    )
+    qr.add_data(qr_data)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white").convert('RGB')
+    width, height = qr_img.size
+    label = f"{staff.name} | {staff.department} | Day {staff.day_1}"
+    # Use default font for max compatibility
+    font = ImageFont.load_default()
+    draw = ImageDraw.Draw(qr_img)
+    # Calculate label size (Pillow compatibility)
+    try:
+        bbox = draw.textbbox((0, 0), label, font=font)
+        label_width = bbox[2] - bbox[0]
+        label_height = bbox[3] - bbox[1]
+    except AttributeError:
+        label_width, label_height = draw.textsize(label, font=font)
+    # Create new image with space for label
+    new_height = height + label_height + 10
+    new_img = Image.new('RGB', (width, new_height), 'white')
+    new_img.paste(qr_img, (0, 0))
+    # Draw label centered below QR
+    text_x = (width - label_width) // 2
+    text_y = height + 5
+    draw_label = ImageDraw.Draw(new_img)
+    draw_label.text((text_x, text_y), label, font=font, fill=(30,30,30))
+    # Save as lightweight JPG
+    buffer = BytesIO()
+    new_img.save(buffer, format='JPEG', quality=80, optimize=True)
+    buffer.seek(0)
+    filename = f"{staff.name.replace(' ', '-').lower()}_{staff.department.replace(' ', '-').lower()}_{staff.day_1}.jpg"
+    response = HttpResponse(buffer.getvalue(), content_type='image/jpeg')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 from django.shortcuts import render, redirect, get_object_or_404
@@ -309,14 +353,16 @@ def view_winners(request):
 
 @login_required
 def download_qr_codes(request):
+    from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
     staff_list = Staff.objects.all().order_by('name')
     departments = Staff.objects.values_list('department', flat=True).distinct()
     days = [1, 2]
     department_filter = request.GET.get('department', '')
     day_filter = request.GET.get('day', '')
     checked_in_filter = request.GET.get('checked_in', '')
+    search_query = request.GET.get('search', '').strip()
     # Annotate staff with check-in status
-    from django.db.models import Exists, OuterRef
+    from django.db.models import Exists, OuterRef, Q
     staff_list = staff_list.annotate(
         checked_in=Exists(CheckIn.objects.filter(staff=OuterRef('pk'), day=OuterRef('day_1')))
     )
@@ -326,13 +372,67 @@ def download_qr_codes(request):
         staff_list = staff_list.filter(day_1=day_filter)
     if checked_in_filter == 'hide':
         staff_list = staff_list.filter(checked_in=False)
+    # Search: prioritize name, then department, then day
+    if search_query:
+        staff_list = staff_list.filter(
+            Q(name__icontains=search_query) |
+            Q(department__icontains=search_query) |
+            Q(day_1__icontains=search_query)
+        ).order_by(
+            # Custom ordering: name matches first, then department, then day
+            '-name', '-department', '-day_1'
+        )
+    # Pagination - use dynamic items per page based on viewport
+    page = request.GET.get('page', 1)
+    
+    # Get the per_page parameter from the request, with fallback to default
+    try:
+        per_page = int(request.GET.get('per_page', 12))
+        # Constrain per_page to reasonable values to prevent abuse
+        per_page = max(4, min(per_page, 48))  # Between 4 and 48 items
+    except (ValueError, TypeError):
+        # Default if not a valid number
+        per_page = 12
+    
+    # Create paginator with dynamic page size
+    paginator = Paginator(staff_list, per_page)
+    
+    try:
+        staff_page = paginator.page(page)
+    except PageNotAnInteger:
+        staff_page = paginator.page(1)
+    except EmptyPage:
+        staff_page = paginator.page(paginator.num_pages)
+    # Prepare staff list for JSON
+    def staff_to_dict(staff):
+        return {
+            'id': staff.id,
+            'name': staff.name,
+            'department': staff.department,
+            'day_1': staff.day_1,
+            'checked_in': staff.checked_in,
+        }
+    staff_objs = list(staff_page.object_list) if staff_page else []
+    staff_list_json = json.dumps([staff_to_dict(s) for s in staff_objs])
+    if request.GET.get('ajax') == '1':
+        return JsonResponse({
+            'staff_list': [staff_to_dict(s) for s in staff_page.object_list],
+            'page': staff_page.number,
+            'num_pages': paginator.num_pages,
+            'per_page': per_page,
+            'total_count': paginator.count
+        })
     return render(request, 'lucky_draw/download_qr_codes.html', {
-        'staff_list': staff_list,
+        'staff_list': staff_page,
+        'staff_list_json': staff_list_json,
         'departments': departments,
         'days': days,
         'department_filter': department_filter,
         'day_filter': day_filter,
         'checked_in_filter': checked_in_filter,
+        'search_query': search_query,
+        'paginator': paginator,
+        'page_obj': staff_page,
     })
 
 @require_POST
