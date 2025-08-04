@@ -1,6 +1,10 @@
-from django.http import FileResponse, JsonResponse, HttpResponse
+import os
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
+from django.http import HttpResponse, JsonResponse, FileResponse
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -21,50 +25,42 @@ from datetime import date
 def download_qr_with_label(request, staff_id):
     staff = get_object_or_404(Staff, id=staff_id)
     import qrcode
-    # Generate QR code on the fly
+    try:
+        from qrcode.image.svg import SvgImage
+    except ImportError:
+        return HttpResponse("SVG QR code generation requires qrcode >=6.1. Please upgrade the qrcode package.", status=500)
+    # Generate QR code SVG on the fly (no Pillow)
+    qr_data = f"{staff.id}:{staff.day_1}"
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
         box_size=10,
         border=4,
     )
-    qr_data = f"{staff.id}:{staff.day_1}"
     qr.add_data(qr_data)
     qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white").convert('RGBA')
-    width, height = qr_img.size
-    # Prepare label text
+    # SVG image as string
+    svg_img = qr.make_image(image_factory=SvgImage)
+    svg_bytes = BytesIO()
+    svg_img.save(svg_bytes)
+    svg_bytes.seek(0)
+    # Add label below QR code in SVG
     label = f"{staff.name} | {staff.department} | Day {staff.day_1}"
-    # Choose font (fallback to default if not found)
-    try:
-        font = ImageFont.truetype("arial.ttf", 22)
-    except:
-        font = ImageFont.load_default()
-    # Calculate label size using textbbox for Pillow >=8.0.0
-    dummy_img = Image.new('RGB', (10, 10))
-    dummy_draw = ImageDraw.Draw(dummy_img)
-    bbox = dummy_draw.textbbox((0, 0), label, font=font)
-    label_width = bbox[2] - bbox[0]
-    label_height = bbox[3] - bbox[1]
-    # Add horizontal padding for label
-    padding_x = 32
-    new_width = max(width, label_width + 2 * padding_x)
-    new_height = height + label_height + 24
-    new_img = Image.new('RGBA', (new_width, new_height), 'white')
-    # Center QR code horizontally
-    qr_x = (new_width - width) // 2
-    new_img.paste(qr_img, (qr_x, 0))
-    # Draw label
-    draw = ImageDraw.Draw(new_img)
-    text_x = (new_width - label_width) // 2
-    text_y = height + 12
-    draw.text((text_x, text_y), label, font=font, fill=(30,30,30))
-    # Serve image as PNG
-    buffer = BytesIO()
-    new_img.save(buffer, format='PNG')
-    buffer.seek(0)
-    filename = f"{staff.name.replace(' ', '-').lower()}_{staff.department.replace(' ', '-').lower()}_{staff.day_1}.png"
-    return FileResponse(buffer, as_attachment=True, filename=filename, content_type='image/png')
+    svg_content = svg_bytes.getvalue().decode('utf-8')
+    # Insert label using SVG <text> below QR code
+    # Find SVG width/height from viewBox
+    import re
+    m = re.search(r'viewBox="(\d+) (\d+) (\d+) (\d+)"', svg_content)
+    if m:
+        x, y, w, h = map(int, m.groups())
+        label_y = h + 30
+        label_x = w // 2
+        label_svg = f'<text x="{label_x}" y="{label_y}" text-anchor="middle" font-size="22" fill="#222">{label}</text>'
+        svg_content = svg_content.replace('</svg>', label_svg + '</svg>')
+    filename = f"{staff.name.replace(' ', '-').lower()}_{staff.department.replace(' ', '-').lower()}_{staff.day_1}.svg"
+    response = HttpResponse(svg_content, content_type='image/svg+xml')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required

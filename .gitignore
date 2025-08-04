@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Django
+*.sqlite3
+*.log
+media/
+staticfiles/
+
+# VS Code
+.vscode/
+
+# Environment
+.env
+venv/
+ENV/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test/coverage
+.coverage
+htmlcov/
+*.cover
+*.py,cover
+
+# Misc
+*.bak
+*.swp
+*.tmp
+
+# Node
+node_modules/
+
+# CSV/Excel uploads
+*.csv
+*.xlsx
+
+# Lottie animations
+static/lottie/
+
+# Ignore migrations cache
+lucky_draw/migrations/__pycache__/
+
+# Ignore compiled files
+lucky_draw/__pycache__/
+staff_party/__pycache__/

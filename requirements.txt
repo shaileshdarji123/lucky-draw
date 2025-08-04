@@ -1,6 +1,6 @@
 django>=3.2
 pillow
-qrcode
+qrcode[svg]>=6.1
 openpyxl
 pandas
 python-dotenv
