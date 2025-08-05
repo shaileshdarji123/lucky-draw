@@ -40,4 +40,15 @@ class EventSettingsForm(forms.ModelForm):
         widgets = {
             'day1_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'day2_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-        } 
+        }
+
+# Manual staff entry form
+class StaffManualForm(forms.ModelForm):
+    class Meta:
+        model = Staff
+        fields = ['name', 'department', 'day_1']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Staff Name'}),
+            'department': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Department'}),
+            'day_1': forms.Select(attrs={'class': 'form-select'}, choices=[(1, 'Day 1'), (2, 'Day 2')]),
+        }

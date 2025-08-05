@@ -63,7 +63,46 @@
                     </div>
                 </div>
             </div>
+            <div class="card mt-4">
+                <div class="card-body">
+                    <div class="text-center mb-3">
+                        <i class="fas fa-user-plus fa-2x text-success mb-2"></i>
+                        <h4 class="fw-bold">Add Staff Manually</h4>
+                        <p class="text-muted">Enter staff details below to add one by one</p>
+                    </div>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="manual_add" value="1">
+                        <div class="mb-3">
+                            {{ manual_form.name.label_tag }}
+                            {{ manual_form.name }}
+                            {% if manual_form.name.errors %}
+                                <div class="text-danger">{% for error in manual_form.name.errors %}{{ error }}{% endfor %}</div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            {{ manual_form.department.label_tag }}
+                            {{ manual_form.department }}
+                            {% if manual_form.department.errors %}
+                                <div class="text-danger">{% for error in manual_form.department.errors %}{{ error }}{% endfor %}</div>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            {{ manual_form.day_1.label_tag }}
+                            {{ manual_form.day_1 }}
+                            {% if manual_form.day_1.errors %}
+                                <div class="text-danger">{% for error in manual_form.day_1.errors %}{{ error }}{% endfor %}</div>
+                            {% endif %}
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-user-plus me-2"></i>Add Staff
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
         </div>
     </div>
 </div>
-{% endblock %} 
+{% endblock %}

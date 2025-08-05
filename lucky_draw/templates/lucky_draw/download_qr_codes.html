@@ -41,11 +41,6 @@
                         <option value="hide" {% if checked_in_filter == 'hide' %}selected{% endif %}>Hide Checked-in</option>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-filter me-2"></i>Filter
-                    </button>
-                </div>
             </form>
         </div>
     </div>
@@ -59,10 +54,18 @@
                         <p class="text-muted">View and download QR codes for staff distribution</p>
                     </div>
                     {% if staff_list %}
-                        <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div id="filter-info-row" class="d-flex justify-content-between align-items-center mb-2" style="display: none;">
                             <div>
-                                <span class="fw-bold">Showing <span id="staff-count">{{ page_obj.end_index }}</span> of {{ paginator.count }} staff</span>
-                                <span class="text-muted ms-2">(Lazy loading enabled)</span>
+                                <span class="fw-bold">Showing <span id="staff-count">{{ page_obj.end_index }}</span> staff</span>
+                                <span class="text-muted ms-2" id="active-filters-badges">
+                                    {% if search_query %}Search: <span class="badge bg-info text-dark">{{ search_query }}</span>{% endif %}
+                                    {% if department_filter %}Department: <span class="badge bg-info text-dark">{{ department_filter }}</span>{% endif %}
+                                    {% if day_filter %}Day: <span class="badge bg-info text-dark">{{ day_filter }}</span>{% endif %}
+                                    {% if checked_in_filter %}Checked-in: <span class="badge bg-info text-dark">{{ checked_in_filter }}</span>{% endif %}
+                                </span>
+                            </div>
+                            <div>
+                                <a href="#" id="clear-filters-btn" class="btn btn-outline-secondary btn-sm">Clear Filters</a>
                             </div>
                         </div>
                         <div class="row" id="staff-cards-container" style="min-height: 200px;">
@@ -107,6 +110,120 @@ try {
     initialStaffList = JSON.parse(document.getElementById('staff-list-json').textContent);
 } catch (e) {
     console.error('Failed to parse initial staff list JSON:', e);
+}
+
+// Debounced AJAX search and filter
+let searchTimeout = null;
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('search');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            if (searchTimeout) clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(function() {
+                runFilterAjax();
+            }, 400); // 400ms debounce
+        });
+    }
+    // Filter change handler
+    ['department', 'day', 'checked_in'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', function() {
+                runFilterAjax();
+            });
+        }
+    });
+    // Clear Filters button handler
+    const clearBtn = document.getElementById('clear-filters-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            document.getElementById('department').value = '';
+            document.getElementById('day').value = '';
+            document.getElementById('checked_in').value = '';
+            document.getElementById('search').value = '';
+            runFilterAjax();
+        });
+    }
+    updateFilterInfoRow();
+});
+
+function updateFilterInfoRow() {
+    // Show/hide filter info row based on active filters
+    const department = document.getElementById('department').value;
+    const day = document.getElementById('day').value;
+    const checked_in = document.getElementById('checked_in').value;
+    const search = document.getElementById('search').value;
+    const filterRow = document.getElementById('filter-info-row');
+    if (filterRow) {
+        if (department || day || checked_in || search) {
+            filterRow.style.display = 'flex';
+        } else {
+            filterRow.style.display = 'none';
+        }
+    }
+    // Update badges
+    const badges = [];
+    if (search) badges.push(`Search: <span class='badge bg-info text-dark'>${search}</span>`);
+    if (department) badges.push(`Department: <span class='badge bg-info text-dark'>${department}</span>`);
+    if (day) badges.push(`Day: <span class='badge bg-info text-dark'>${day}</span>`);
+    if (checked_in) badges.push(`Checked-in: <span class='badge bg-info text-dark'>${checked_in}</span>`);
+    const badgesEl = document.getElementById('active-filters-badges');
+    if (badgesEl) badgesEl.innerHTML = badges.join(' ');
+}
+
+function runFilterAjax() {
+    isLoading = false;
+    currentPage = 1;
+    lastPage = 1;
+    document.getElementById('staff-cards-container').innerHTML = '';
+    // Reset loading indicator to default
+    const loadingIndicator = document.getElementById('loading-indicator');
+    if (loadingIndicator) {
+        loadingIndicator.innerHTML = '<span class="spinner-border spinner-border-sm text-primary"></span><span class="ms-2 text-muted small">Loading more...</span>';
+        loadingIndicator.style.height = '50px';
+        loadingIndicator.style.display = 'block';
+    }
+    let params = new URLSearchParams();
+    params.set('department', document.getElementById('department').value);
+    params.set('day', document.getElementById('day').value);
+    params.set('checked_in', document.getElementById('checked_in').value);
+    params.set('search', document.getElementById('search').value);
+    params.set('page', 1);
+    params.set('ajax', 1);
+    params.set('per_page', calculateItemsPerPage());
+    fetch(window.location.pathname + '?' + params.toString())
+        .then(res => res.json())
+        .then(data => {
+            let loaded = 0;
+            const container = document.getElementById('staff-cards-container');
+            container.innerHTML = '';
+            if (Array.isArray(data.staff_list)) {
+                data.staff_list.forEach(staff => {
+                    container.appendChild(renderStaffCard(staff));
+                    loaded++;
+                });
+            }
+            // Update staff count
+            let staffCountEl = document.getElementById('staff-count');
+            if (staffCountEl) {
+                staffCountEl.textContent = loaded;
+            }
+            lastPage = data.num_pages;
+            // Hide loading indicator if no more pages
+            if (currentPage >= lastPage) {
+                loadingIndicator.innerHTML = '<div class="text-muted small py-2"><i class="fas fa-check-circle me-1"></i>All staff loaded</div>';
+                loadingIndicator.style.height = 'auto';
+                loadingIndicator.style.display = 'block';
+            } else {
+                loadingIndicator.innerHTML = '<span class="spinner-border spinner-border-sm text-primary"></span><span class="ms-2 text-muted small">Loading more...</span>';
+                loadingIndicator.style.height = '50px';
+                loadingIndicator.style.display = 'block';
+            }
+            updateFilterInfoRow();
+            // Re-attach lazy loading observer for new filter set
+            setupLazyLoading();
+        });
 }
 
 // Calculate how many items fit in the viewport based on screen size
@@ -207,24 +324,23 @@ function loadNextPage() {
         console.log(`Not loading next page: isLoading=${isLoading}, currentPage=${currentPage}, lastPage=${lastPage}`);
         return;
     }
-    
     isLoading = true;
     currentPage += 1;
     console.log(`Loading page ${currentPage} of ${lastPage}...`);
-    
     document.getElementById('loading-indicator').style.display = 'block';
-    
     // Calculate how many items to request based on viewport size
     const itemsPerPage = calculateItemsPerPage();
-    
-    // Build request URL with dynamic page size
-    let params = new URLSearchParams(window.location.search);
+    // Build request URL with dynamic page size and current filters
+    let params = new URLSearchParams();
+    params.set('department', document.getElementById('department').value);
+    params.set('day', document.getElementById('day').value);
+    params.set('checked_in', document.getElementById('checked_in').value);
+    params.set('search', document.getElementById('search').value);
     params.set('page', currentPage);
-    params.set('per_page', itemsPerPage); // Add dynamic page size parameter
-    
-    const url = window.location.pathname + '?' + params.toString() + '&ajax=1';
+    params.set('ajax', 1);
+    params.set('per_page', itemsPerPage);
+    const url = window.location.pathname + '?' + params.toString();
     console.log(`Fetching URL: ${url} (${itemsPerPage} items per page)`);
-    
     fetch(url)
         .then(res => {
             if (!res.ok) {
@@ -235,27 +351,22 @@ function loadNextPage() {
         .then(data => {
             console.log(`Received data for page ${currentPage}:`, data);
             let loaded = 0;
-            
             if (Array.isArray(data.staff_list)) {
                 data.staff_list.forEach(staff => {
                     document.getElementById('staff-cards-container').appendChild(renderStaffCard(staff));
                     loaded++;
                 });
-                console.log(`Added ${loaded} staff cards to container`);
             } else {
                 console.error('Expected staff_list to be an array but got:', data.staff_list);
             }
-            
             // Update staff count
             let staffCountEl = document.getElementById('staff-count');
             if (staffCountEl) {
                 let currentCount = parseInt(staffCountEl.textContent) || 0;
                 staffCountEl.textContent = currentCount + loaded;
             }
-            
             lastPage = data.num_pages;
             isLoading = false;
-            
             // Only hide the loading indicator if we've reached the last page
             if (currentPage >= lastPage) {
                 const loadingIndicator = document.getElementById('loading-indicator');
@@ -263,11 +374,8 @@ function loadNextPage() {
                 loadingIndicator.style.height = 'auto';
                 console.log('Reached last page, showing completion message');
             } else {
-                // Show the loading indicator to allow triggering the next page load
-                // but only when user scrolls to it
                 document.getElementById('loading-indicator').style.display = 'block';
             }
-            
             // If no more staff, show fallback
             if (currentPage >= lastPage && document.getElementById('staff-cards-container').children.length === 0) {
                 document.getElementById('staff-cards-container').innerHTML = '<div class="text-center py-5"><i class="fas fa-users fa-3x text-muted mb-3"></i><h5 class="text-muted">No Staff Members Found</h5></div>';

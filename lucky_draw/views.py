@@ -11,7 +11,7 @@ import pandas as pd
 import random
 import json
 from .models import Staff, CheckIn, Winner, EventSettings
-from .forms import StaffUploadForm, QRCodeScanForm, EventSettingsForm
+from .forms import StaffUploadForm, QRCodeScanForm, EventSettingsForm, StaffManualForm
 from django.utils import timezone
 from datetime import date
 
@@ -126,26 +126,12 @@ def login_view(request):
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
-        
-        # Fixed credentials for HR Admin
-        if username == 'hr_admin' and password == 'staff_party_2024':
-            user = authenticate(request, username=username, password=password)
-            if user is None:
-                # Create a dummy user for authentication
-                from django.contrib.auth.models import User
-                user, created = User.objects.get_or_create(
-                    username=username,
-                    defaults={'is_staff': True, 'is_superuser': True}
-                )
-                if created:
-                    user.set_password(password)
-                    user.save()
-            
+        user = authenticate(request, username=username, password=password)
+        if user is not None and user.is_active:
             login(request, user)
             return redirect('dashboard')
         else:
-            messages.error(request, 'Invalid credentials. Use hr_admin / staff_party_2024')
-    
+            messages.error(request, 'Invalid credentials. Please try again.')
     return render(request, 'lucky_draw/login.html')
 
 @login_required
@@ -200,42 +186,39 @@ def dashboard(request):
 
 @login_required
 def upload_staff(request):
+    upload_form = StaffUploadForm()
+    manual_form = StaffManualForm()
     if request.method == 'POST':
-        form = StaffUploadForm(request.POST, request.FILES)
-        if form.is_valid():
-            try:
-                file = request.FILES['file']
-                
-                # Read the file based on extension
-                if file.name.endswith('.csv'):
-                    df = pd.read_csv(file)
-                else:
-                    df = pd.read_excel(file)
-                
-                # Clear existing staff
-                Staff.objects.all().delete()
-                
-                # Process each row
-                for index, row in df.iterrows():
-                    staff_name = row.iloc[0]  # First column
-                    department = row.iloc[1]  # Second column
-                    day = int(row.iloc[2])    # Third column
-                    
-                    Staff.objects.create(
-                        name=staff_name,
-                        department=department,
-                        day_1=day
-                    )
-                
-                messages.success(request, f'Successfully uploaded {len(df)} staff members')
-                return redirect('dashboard')
-                
-            except Exception as e:
-                messages.error(request, f'Error processing file: {str(e)}')
-    else:
-        form = StaffUploadForm()
-    
-    return render(request, 'lucky_draw/upload_staff.html', {'form': form})
+        if 'file' in request.FILES:
+            upload_form = StaffUploadForm(request.POST, request.FILES)
+            if upload_form.is_valid():
+                try:
+                    file = request.FILES['file']
+                    if file.name.endswith('.csv'):
+                        df = pd.read_csv(file)
+                    else:
+                        df = pd.read_excel(file)
+                    Staff.objects.all().delete()
+                    for index, row in df.iterrows():
+                        staff_name = row.iloc[0]
+                        department = row.iloc[1]
+                        day = int(row.iloc[2])
+                        Staff.objects.create(
+                            name=staff_name,
+                            department=department,
+                            day_1=day
+                        )
+                    messages.success(request, f'Successfully uploaded {len(df)} staff members')
+                    return redirect('dashboard')
+                except Exception as e:
+                    messages.error(request, f'Error processing file: {str(e)}')
+        elif 'manual_add' in request.POST:
+            manual_form = StaffManualForm(request.POST)
+            if manual_form.is_valid():
+                manual_form.save()
+                messages.success(request, 'Staff member added successfully.')
+                return redirect('upload_staff')
+    return render(request, 'lucky_draw/upload_staff.html', {'form': upload_form, 'manual_form': manual_form})
 
 @login_required
 @require_event_dates
@@ -355,6 +338,7 @@ def view_winners(request):
 def download_qr_codes(request):
     from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
     staff_list = Staff.objects.all().order_by('name')
+    total_staff_count = Staff.objects.count()
     departments = Staff.objects.values_list('department', flat=True).distinct()
     days = [1, 2]
     department_filter = request.GET.get('department', '')
@@ -372,16 +356,34 @@ def download_qr_codes(request):
         staff_list = staff_list.filter(day_1=day_filter)
     if checked_in_filter == 'hide':
         staff_list = staff_list.filter(checked_in=False)
-    # Search: prioritize name, then department, then day
+    # Enhanced search: prioritize exact matches for name, department, day, or ID
     if search_query:
-        staff_list = staff_list.filter(
-            Q(name__icontains=search_query) |
-            Q(department__icontains=search_query) |
-            Q(day_1__icontains=search_query)
-        ).order_by(
-            # Custom ordering: name matches first, then department, then day
-            '-name', '-department', '-day_1'
+        tokens = [t.strip().lower() for t in search_query.split() if t.strip()]
+        queries = Q()
+        for token in tokens:
+            if token.isdigit():
+                queries &= (Q(id=token) | Q(name__icontains=token) | Q(day_1=int(token)) | Q(department__icontains=token))
+            else:
+                queries &= (Q(name__icontains=token) | Q(department__icontains=token))
+        staff_list = staff_list.filter(queries)
+
+        # Annotate for exact match scoring
+        from django.db.models import Case, When, IntegerField, Value
+        exact_conditions = []
+        for token in tokens:
+            conds = []
+            if token.isdigit():
+                conds.append(When(id=token, then=Value(1)))
+                conds.append(When(name__iexact=token, then=Value(1)))
+                conds.append(When(day_1=int(token), then=Value(1)))
+            else:
+                conds.append(When(name__iexact=token, then=Value(1)))
+                conds.append(When(department__iexact=token, then=Value(1)))
+            exact_conditions.extend(conds)
+        staff_list = staff_list.annotate(
+            exact_match_score=Case(*exact_conditions, default=Value(0), output_field=IntegerField())
         )
+        staff_list = staff_list.order_by('-exact_match_score', '-name', '-department', '-day_1')
     # Pagination - use dynamic items per page based on viewport
     page = request.GET.get('page', 1)
     
@@ -420,7 +422,10 @@ def download_qr_codes(request):
             'page': staff_page.number,
             'num_pages': paginator.num_pages,
             'per_page': per_page,
-            'total_count': paginator.count
+            'total_count': paginator.count,
+            'total_staff_count': total_staff_count,
+            'departments': list(departments),
+            'days': days,
         })
     return render(request, 'lucky_draw/download_qr_codes.html', {
         'staff_list': staff_page,
@@ -433,6 +438,7 @@ def download_qr_codes(request):
         'search_query': search_query,
         'paginator': paginator,
         'page_obj': staff_page,
+        'total_staff_count': total_staff_count,
     })
 
 @require_POST

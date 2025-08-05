@@ -63,29 +63,66 @@ function onScanFailure(error) {
 }
 
 function processQRCode(qrData) {
-    // First, decode the QR to get staff info for confirmation
-    fetch('{% url "process_qr_scan" %}', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': document.getElementById('csrf-token').value
-        },
-        body: JSON.stringify({qr_data: qrData})
+    // Decode QR to get staff info for confirmation
+    // Parse staff_id and day from QR data
+    let staffId = null, day = null;
+    try {
+        const parts = qrData.split(':');
+        staffId = parts[0];
+        day = parts[1];
+    } catch (e) {
+        showResult({success: false, message: 'Invalid QR code format.'});
+        return;
+    }
+    // Fetch staff info for confirmation
+    fetch('/preview-qr-svg/' + staffId + '/', {
+        method: 'GET'
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            // Ask for confirmation before check-in
-            if (!confirm(`Check in ${data.staff_name} from ${data.department} for Day ${data.day}?`)) {
-                // If cancelled, restart scanner
-                restartScanner();
-                return;
-            }
+    .then(response => response.text())
+    .then(svg => {
+        // Optionally parse SVG label for staff info, or just ask for confirmation
+        if (!confirm(`Check in staff ID ${staffId} for Day ${day}?`)) {
+            restartScanner();
+            return;
         }
-        showResult(data);
+        // Only call check-in API if confirmed
+        fetch('{% url "process_qr_scan" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.getElementById('csrf-token').value
+            },
+            body: JSON.stringify({qr_data: qrData})
+        })
+        .then(response => response.json())
+        .then(data => {
+            showResult(data);
+        })
+        .catch(error => {
+            showResult({success: false, message: 'An error occurred while processing the QR code.'});
+        });
     })
-    .catch(error => {
-        showResult({success: false, message: 'An error occurred while processing the QR code.'});
+    .catch(() => {
+        // If preview fails, still ask for confirmation
+        if (!confirm(`Check in staff ID ${staffId} for Day ${day}?`)) {
+            restartScanner();
+            return;
+        }
+        fetch('{% url "process_qr_scan" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.getElementById('csrf-token').value
+            },
+            body: JSON.stringify({qr_data: qrData})
+        })
+        .then(response => response.json())
+        .then(data => {
+            showResult(data);
+        })
+        .catch(error => {
+            showResult({success: false, message: 'An error occurred while processing the QR code.'});
+        });
     });
 }
 
