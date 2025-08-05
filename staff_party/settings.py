@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-ikbe%#_cxqlcnkrknyku!!f7j^zzpz$vz2nr!&9=j6ggz=o8r_
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["192.168.0.4", "localhost", "172.20.10.5", "8f72373a80db.ngrok-free.app"]
+ALLOWED_HOSTS = ["192.168.0.4", "localhost", "172.20.10.5", "8f72373a80db.ngrok-free.app", "lucky-draw-navy.vercel.app"]
 
 
 # Application definition
