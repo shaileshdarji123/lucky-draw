@@ -47,6 +47,10 @@ class EventSettings(models.Model):
     day1_date = models.DateField(null=True, blank=True)
     day2_date = models.DateField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    @classmethod
+    def get_solo(cls):
+        return cls.objects.first() or cls.objects.create()
 
     def __str__(self):
         return f"Event Dates: Day 1 - {self.day1_date}, Day 2 - {self.day2_date}"

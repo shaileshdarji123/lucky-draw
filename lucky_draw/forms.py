@@ -52,3 +52,12 @@ class StaffManualForm(forms.ModelForm):
             'department': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Department'}),
             'day_1': forms.Select(attrs={'class': 'form-select'}, choices=[(1, 'Day 1'), (2, 'Day 2')]),
         }
+
+    def clean_name(self):
+        name = self.cleaned_data.get('name', '')
+        if name is None:
+            return name
+        name = name.strip()
+        if len(name) > 35:
+            raise forms.ValidationError('Name must be 35 characters or less.')
+        return name

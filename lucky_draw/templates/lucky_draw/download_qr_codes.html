@@ -98,6 +98,209 @@
 {% endblock %}
 
 {% block extra_js %}
+<style>
+/* Modern Staff Card Styles */
+.staff-card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+    border: none;
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    position: relative;
+}
+
+.staff-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+.active-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.active-card .staff-name {
+    color: white;
+}
+
+.active-card .staff-department {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.checked-in-card {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.checked-in-card .staff-name {
+    color: white;
+}
+
+.checked-in-card .staff-department {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.card-header-custom {
+    padding: 20px 20px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.avatar-circle {
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
+}
+
+.day-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    backdrop-filter: blur(10px);
+}
+
+.badge-active {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.badge-checked-in {
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+}
+
+.card-body-custom {
+    padding: 15px 20px 20px;
+    text-align: center;
+}
+
+.staff-name {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #2c3e50;
+}
+
+.staff-department {
+    font-size: 14px;
+    color: #6c757d;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.checkin-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 15px;
+    font-weight: 600;
+    color: white;
+    backdrop-filter: blur(10px);
+}
+
+.checkin-status i {
+    font-size: 16px;
+}
+
+.action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+}
+
+.btn-download {
+    background: linear-gradient(45deg, #28a745, #20c997);
+    border: none;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 25px;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    width: 100%;
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+}
+
+.btn-download:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(40, 167, 69, 0.4);
+    color: white;
+}
+
+.btn-delete {
+    background: rgba(220, 53, 69, 0.9);
+    border: none;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+}
+
+.btn-delete:hover {
+    background: #dc3545;
+    transform: scale(1.05);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .staff-card {
+        margin-bottom: 20px;
+    }
+
+    .card-header-custom {
+        padding: 15px 15px 0;
+    }
+
+    .avatar-circle {
+        width: 40px;
+        height: 40px;
+        font-size: 16px;
+    }
+
+    .staff-name {
+        font-size: 16px;
+    }
+}
+
+/* Loading animation */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.staff-card.loading {
+    animation: pulse 1.5s infinite;
+}
+</style>
 <script type="application/json" id="current-page-json">{{ page_obj.number }}</script>
 <script type="application/json" id="last-page-json">{{ paginator.num_pages }}</script>
 <script type="application/json" id="staff-list-json">{{ staff_list_json|safe }}</script>
@@ -296,23 +499,38 @@ function renderStaffCard(staff) {
     card.className = 'col-md-4 col-lg-3 mb-4';
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
     card.innerHTML = `
-        <div class="card h-100${checkedIn ? ' border-secondary bg-light' : ''}">
-            <div class="card-body text-center">
-                <h6 class="card-title${checkedIn ? ' text-secondary' : ''}">${staff.name}</h6>
-                <p class="text-muted small">${staff.department}</p>
-                <p class="badge ${checkedIn ? 'bg-secondary' : 'bg-primary'}">Day ${staff.day_1}</p>
-                <div class="mt-3">
-                    <img src="/preview-qr-svg/${staff.id}/" alt="QR Code for ${staff.name}" class="img-fluid${checkedIn ? ' opacity-50' : ''}" style="max-width: 150px;">
+        <div class="staff-card h-100 ${checkedIn ? 'checked-in-card' : 'active-card'}">
+            <div class="card-header-custom">
+                <div class="avatar-circle">
+                    <i class="fas fa-user"></i>
                 </div>
-                <div class="mt-3 d-flex ${checkedIn ? 'flex-column align-items-center gap-2' : 'justify-content-center gap-2'}">
-                    ${checkedIn ? `<div class='alert alert-secondary w-100 mb-2 p-2'><i class='fas fa-check-circle me-1'></i> Checked-in</div>` : `
-                        <a href="/download-qr-with-label/${staff.id}/" class="btn btn-sm btn-outline-primary" download><i class="fas fa-download me-1"></i>Download JPG</a>
+                <div class="day-badge ${checkedIn ? 'badge-checked-in' : 'badge-active'}">
+                    <i class="fas fa-calendar-day me-1"></i>Day ${staff.day_1}
+                </div>
+            </div>
+            <div class="card-body-custom">
+                <h6 class="staff-name">${staff.name}</h6>
+                <p class="staff-department">
+                    <i class="fas fa-building me-1"></i>${staff.department}
+                </p>
+                ${checkedIn ? `
+                    <div class="checkin-status">
+                        <i class="fas fa-check-circle"></i>
+                        <span>Checked In</span>
+                    </div>
+                ` : `
+                    <div class="action-buttons">
+                        <a href="/download-qr-with-label/${staff.id}/" class="btn btn-download" download>
+                            <i class="fas fa-download me-2"></i>Download Pass
+                        </a>
                         <form method="post" class="delete-staff-form" data-staff-id="${staff.id}" style="display:inline;">
                             <input type="hidden" name="csrfmiddlewaretoken" value="${csrfToken}">
-                            <button type="submit" class="btn btn-sm btn-outline-danger delete-staff-btn"><i class="fas fa-trash"></i> Delete</button>
+                            <button type="submit" class="btn btn-delete delete-staff-btn">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </form>
-                    `}
-                </div>
+                    </div>
+                `}
             </div>
         </div>
     `;

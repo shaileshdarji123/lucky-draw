@@ -28,7 +28,10 @@ SECRET_KEY = 'django-insecure-ikbe%#_cxqlcnkrknyku!!f7j^zzpz$vz2nr!&9=j6ggz=o8r_
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["192.168.0.4", "localhost", "172.20.10.5", "8f72373a80db.ngrok-free.app", "lucky-draw-navy.vercel.app"]
+ALLOWED_HOSTS = ["192.168.0.6", "127.0.0.1", "172.20.10.5", "b162743cd7c7.ngrok-free.app"]
+
+# Where to redirect for @login_required when user is not authenticated
+LOGIN_URL = '/'
 
 
 # Application definition
@@ -77,17 +80,26 @@ WSGI_APPLICATION = 'staff_party.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+USE_LOCAL_DB = os.getenv('USE_LOCAL_DB', 'False').lower() in ('1', 'true', 'yes')
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT', '3306'),
+if USE_LOCAL_DB:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.getenv('DB_NAME'),
+            'USER': os.getenv('DB_USER'),
+            'PASSWORD': os.getenv('DB_PASSWORD'),
+            'HOST': os.getenv('DB_HOST'),
+            'PORT': os.getenv('DB_PORT', '3306'),
+        }
+    }
 
 
 # Password validation
@@ -140,5 +152,5 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://8f72373a80db.ngrok-free.app"
+    "https://b162743cd7c7.ngrok-free.app",
 ]

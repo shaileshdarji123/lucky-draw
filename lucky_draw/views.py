@@ -13,6 +13,7 @@ import json
 from .models import Staff, CheckIn, Winner, EventSettings
 from .forms import StaffUploadForm, QRCodeScanForm, EventSettingsForm, StaffManualForm
 from django.utils import timezone
+from django.conf import settings
 from datetime import date
 
 # SVG preview endpoint for QR code
@@ -65,44 +66,236 @@ def download_qr_with_label(request, staff_id):
         from PIL import Image, ImageDraw, ImageFont
     except ImportError:
         return HttpResponse("JPG QR code generation requires Pillow. Please install pillow.", status=500)
-    # Generate QR code as PIL image (lightweight)
+
+    # Get event settings
+    event_settings = EventSettings.get_solo()
+    if not event_settings:
+        return HttpResponse("Event settings not found. Please set event dates first.", status=400)
+
+    # Get the date for the specific day
+    if staff.day_1 == 1:
+        event_date = event_settings.day1_date
+        template_path = 'static/templates/day-1-lucky-draw.png'
+        qr_coords = (504, 1569, 1083, 2151)
+        date_coords = (459, 1331, 1125, 1422)
+    elif staff.day_1 == 2:
+        event_date = event_settings.day2_date
+        template_path = 'static/templates/day-2-lucky-draw.png'
+        qr_coords = (502, 1570, 1083, 2152)
+        date_coords = (451, 1331, 1106, 1422)
+    else:
+        return HttpResponse("Invalid day value.", status=400)
+
+    if not event_date:
+        return HttpResponse(f"Date for Day {staff.day_1} not set.", status=400)
+
+    # Load the template image
+    template_full_path = os.path.join(settings.BASE_DIR, template_path)
+    if not os.path.exists(template_full_path):
+        return HttpResponse("Template image not found.", status=404)
+
+    template_img = Image.open(template_full_path)
+    draw = ImageDraw.Draw(template_img)
+
+    # Generate QR code
     qr_data = f"{staff.id}:{staff.day_1}"
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=6,
-        border=2,
+        box_size=10,
+        border=4,
     )
     qr.add_data(qr_data)
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert('RGB')
-    width, height = qr_img.size
-    label = f"{staff.name} | {staff.department} | Day {staff.day_1}"
-    # Use default font for max compatibility
-    font = ImageFont.load_default()
-    draw = ImageDraw.Draw(qr_img)
-    # Calculate label size (Pillow compatibility)
+
+    # Resize QR code to fit the coordinates
+    qr_width = qr_coords[2] - qr_coords[0]
+    qr_height = qr_coords[3] - qr_coords[1]
+    qr_img = qr_img.resize((qr_width, qr_height), Image.Resampling.LANCZOS)
+
+    # Paste QR code onto template
+    template_img.paste(qr_img, (qr_coords[0], qr_coords[1]))
+
+    # Add date text
     try:
-        bbox = draw.textbbox((0, 0), label, font=font)
-        label_width = bbox[2] - bbox[0]
-        label_height = bbox[3] - bbox[1]
+        # Use Poppins ExtraBold font for maximum thickness
+        font_path = os.path.join(settings.BASE_DIR, 'static/fonts/Poppins-ExtraBold.ttf')
+        if os.path.exists(font_path):
+            # Convert 63.7pt to pixels (approximately 84 pixels at 72 DPI)
+            font_size = int(63.7 * 1.33)  # Rough conversion from pt to px
+            font = ImageFont.truetype(font_path, font_size)
+        else:
+            # Try Poppins Bold as fallback
+            font_path_bold = os.path.join(settings.BASE_DIR, 'static/fonts/Poppins-Bold.ttf')
+            if os.path.exists(font_path_bold):
+                font_size = int(63.7 * 1.33)
+                font = ImageFont.truetype(font_path_bold, font_size)
+            else:
+                # Try regular Poppins as fallback
+                font_path_regular = os.path.join(settings.BASE_DIR, 'static/fonts/Poppins-Regular.ttf')
+                if os.path.exists(font_path_regular):
+                    font_size = int(63.7 * 1.33)
+                    font = ImageFont.truetype(font_path_regular, font_size)
+                else:
+                    # Fallback fonts
+                    try:
+                        font = ImageFont.truetype("arialbd.ttf", 84)  # Arial Bold
+                    except:
+                        try:
+                            font = ImageFont.truetype("arial.ttf", 84)
+                        except:
+                            try:
+                                font = ImageFont.truetype("DejaVuSans-Bold.ttf", 84)
+                            except:
+                                try:
+                                    font = ImageFont.truetype("DejaVuSans.ttf", 84)
+                                except:
+                                    # Final fallback to default
+                                    font = ImageFont.load_default()
+    except:
+        font = ImageFont.load_default()
+
+    date_text = event_date.strftime("%d %B %Y").upper()
+
+    # Calculate text positioning (center within date coordinates)
+    try:
+        bbox = draw.textbbox((0, 0), date_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
     except AttributeError:
-        label_width, label_height = draw.textsize(label, font=font)
-    # Create new image with space for label
-    new_height = height + label_height + 10
-    new_img = Image.new('RGB', (width, new_height), 'white')
-    new_img.paste(qr_img, (0, 0))
-    # Draw label centered below QR
-    text_x = (width - label_width) // 2
-    text_y = height + 5
-    draw_label = ImageDraw.Draw(new_img)
-    draw_label.text((text_x, text_y), label, font=font, fill=(30,30,30))
-    # Save as lightweight JPG
-    buffer = BytesIO()
-    new_img.save(buffer, format='JPEG', quality=80, optimize=True)
-    buffer.seek(0)
-    filename = f"{staff.name.replace(' ', '-').lower()}_{staff.department.replace(' ', '-').lower()}_{staff.day_1}.jpg"
-    response = HttpResponse(buffer.getvalue(), content_type='image/jpeg')
+        # Fallback for older PIL versions
+        text_width = len(date_text) * 20  # Rough estimate
+        text_height = 30
+
+    # Center the text in the date coordinates
+    date_x = date_coords[0] + (date_coords[2] - date_coords[0] - text_width) // 2
+    date_y = date_coords[1] + (date_coords[3] - date_coords[1] - text_height) // 2
+
+    # Draw the date text with stroke for extra thickness
+    stroke_width = 3  # Thickness of the stroke outline
+    
+    # Draw stroke/outline first (black stroke around white text for better visibility)
+    draw.text((date_x, date_y), date_text, fill="black", font=font, stroke_width=stroke_width, stroke_fill="black")
+    
+    # Draw main text on top
+    draw.text((date_x, date_y), date_text, fill="white", font=font)
+
+    # Add staff name text in the requested coordinates for day 1 and day 2
+    # Use the same font family and size as the date text (variable `font` above)
+    try:
+        name_font = font
+    except Exception:
+        # Fallback
+        try:
+            name_font = ImageFont.truetype("arial.ttf", 48)
+        except Exception:
+            name_font = ImageFont.load_default()
+
+    # Determine coordinates for name overlay (these are the requested coords)
+    if staff.day_1 == 1:
+        name_coords = (270, 291, 1339, 414)  # Updated for wider box
+    else:
+        name_coords = (270, 291, 1272, 416)  # Updated for wider box
+
+    # Prepare name text and enforce 35-char limit
+    staff_name_text = staff.name.strip() if staff.name else ''
+    if len(staff_name_text) > 35:
+        staff_name_text = staff_name_text[:35]
+
+    max_width = name_coords[2] - name_coords[0]
+    max_height = name_coords[3] - name_coords[1]
+
+    # Start with the same font size as the date font (font variable above)
+    base_size = getattr(font, 'size', None)
+    if base_size is None:
+        # fallback default
+        base_size = 84
+
+    # Try to locate a font path to recreate at different sizes
+    font_path_candidate = None
+    try:
+        if hasattr(font, 'path'):
+            font_path_candidate = font.path
+    except Exception:
+        font_path_candidate = None
+
+    # fallback to Poppins-Regular if available
+    if not font_path_candidate:
+        candidate = os.path.join(settings.BASE_DIR, 'static/fonts/Poppins-Regular.ttf')
+        if os.path.exists(candidate):
+            font_path_candidate = candidate
+
+    # If still not found, try Arial
+    if not font_path_candidate:
+        try:
+            # System fonts may be found by name in truetype
+            font_path_candidate = "arial.ttf"
+        except Exception:
+            font_path_candidate = None
+
+    # Create a resizable font object; if not possible, fall back to existing name_font
+    try:
+        if font_path_candidate:
+            test_font = ImageFont.truetype(font_path_candidate, base_size)
+        else:
+            test_font = name_font
+    except Exception:
+        test_font = name_font
+
+    # Dynamically reduce font size until text fits within max_width and max_height
+    chosen_font = test_font
+    chosen_size = getattr(test_font, 'size', base_size)
+    # Measure function
+    def measure(text, fnt):
+        try:
+            b = draw.textbbox((0, 0), text, font=fnt)
+            return b[2] - b[0], b[3] - b[1]
+        except Exception:
+            return draw.textsize(text, font=fnt)
+
+    text_w, text_h = measure(staff_name_text, chosen_font)
+    min_size = 12
+    while (text_w > max_width or text_h > max_height) and chosen_size > min_size:
+        chosen_size -= 2
+        try:
+            if font_path_candidate:
+                chosen_font = ImageFont.truetype(font_path_candidate, chosen_size)
+            else:
+                # cannot resize default font, break
+                break
+        except Exception:
+            break
+        text_w, text_h = measure(staff_name_text, chosen_font)
+
+    # If still doesn't fit and we couldn't resize further, fall back to truncation
+    if (text_w > max_width or text_h > max_height) and chosen_size <= min_size:
+        trimmed = staff_name_text
+        while trimmed and measure(trimmed, chosen_font)[0] > max_width:
+            trimmed = trimmed[:-1]
+        staff_name_text = trimmed
+        text_w, text_h = measure(staff_name_text, chosen_font)
+
+    # Center the text in the name coordinates
+    name_x = name_coords[0] + (max_width - text_w) // 2
+    name_y = name_coords[1] + (max_height - text_h) // 2
+
+    # Draw using chosen_font (which matches date font family if possible)
+    try:
+        draw.text((name_x, name_y), staff_name_text, font=chosen_font, fill='black', stroke_width=3, stroke_fill='black')
+        draw.text((name_x, name_y), staff_name_text, font=chosen_font, fill='white')
+    except TypeError:
+        draw.text((name_x-1, name_y-1), staff_name_text, font=chosen_font, fill='black')
+        draw.text((name_x, name_y), staff_name_text, font=chosen_font, fill='white')
+
+    # Save the modified image to BytesIO
+    output = BytesIO()
+    template_img.save(output, format='PNG')
+    output.seek(0)
+
+    # Return the image as a download
+    filename = f"staff_pass_{staff.name.replace(' ', '_').lower()}_{staff.department.replace(' ', '_').lower()}_day{staff.day_1}.png"
+    response = HttpResponse(output.getvalue(), content_type='image/png')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 from django.shortcuts import render, redirect, get_object_or_404
@@ -201,6 +394,10 @@ def upload_staff(request):
                     Staff.objects.all().delete()
                     for index, row in df.iterrows():
                         staff_name = row.iloc[0]
+                        staff_name = str(row.iloc[0]).strip()
+                        # Truncate imported names to 35 chars as required
+                        if len(staff_name) > 35:
+                            staff_name = staff_name[:35]
                         department = row.iloc[1]
                         day = int(row.iloc[2])
                         Staff.objects.create(
@@ -316,12 +513,182 @@ def draw_winner(request):
 def view_checkins(request):
     day1_checkins = CheckIn.objects.filter(day=1).select_related('staff').order_by('-checked_in_at')
     day2_checkins = CheckIn.objects.filter(day=2).select_related('staff').order_by('-checked_in_at')
-    
+
     context = {
         'day1_checkins': day1_checkins,
         'day2_checkins': day2_checkins,
     }
     return render(request, 'lucky_draw/view_checkins.html', context)
+
+@login_required
+def download_day1_excel(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from django.http import HttpResponse
+    from django.utils import timezone
+
+    # Create workbook
+    wb = Workbook()
+
+    # Sheet 1: Day 1 Checked-in staff
+    ws_checked_in = wb.active
+    ws_checked_in.title = "Day 1 - Checked In"
+
+    # Sheet 2: Day 1 Not checked-in staff
+    ws_not_checked_in = wb.create_sheet("Day 1 - Not Checked In")
+
+    # Define headers
+    checked_headers = ['Staff ID', 'Name', 'Department', 'Check-in Time']
+    not_checked_headers = ['Staff ID', 'Name', 'Department']
+
+    # Style headers
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+
+    # Function to style headers
+    def style_headers(worksheet, headers, fill_color):
+        for col_num, header in enumerate(headers, 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.value = header
+            cell.font = header_font
+            cell.fill = fill_color
+            cell.alignment = Alignment(horizontal='center')
+
+    # Function to auto-adjust column widths
+    def adjust_column_widths(worksheet):
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = (max_length + 2)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+
+    # Day 1 Checked In
+    style_headers(ws_checked_in, checked_headers, header_fill)
+    day1_checkins = CheckIn.objects.filter(day=1).select_related('staff').order_by('-checked_in_at')
+
+    row_num = 2
+    for checkin in day1_checkins:
+        ws_checked_in.cell(row=row_num, column=1).value = checkin.staff.id
+        ws_checked_in.cell(row=row_num, column=2).value = checkin.staff.name
+        ws_checked_in.cell(row=row_num, column=3).value = checkin.staff.department
+        ws_checked_in.cell(row=row_num, column=4).value = checkin.checked_in_at.strftime("%Y-%m-%d %H:%M:%S")
+        row_num += 1
+    adjust_column_widths(ws_checked_in)
+
+    # Day 1 Not Checked In
+    style_headers(ws_not_checked_in, not_checked_headers, header_fill)
+    day1_staff = Staff.objects.filter(day_1=1)
+    day1_checked_ids = CheckIn.objects.filter(day=1).values_list('staff_id', flat=True)
+
+    row_num = 2
+    for staff in day1_staff:
+        if staff.id not in day1_checked_ids:
+            ws_not_checked_in.cell(row=row_num, column=1).value = staff.id
+            ws_not_checked_in.cell(row=row_num, column=2).value = staff.name
+            ws_not_checked_in.cell(row=row_num, column=3).value = staff.department
+            row_num += 1
+    adjust_column_widths(ws_not_checked_in)
+
+    # Create response
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    current_time = timezone.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"day1_checkin_report_{current_time}.xlsx"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    # Save workbook to response
+    wb.save(response)
+    return response
+
+@login_required
+def download_day2_excel(request):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from django.http import HttpResponse
+    from django.utils import timezone
+
+    # Create workbook
+    wb = Workbook()
+
+    # Sheet 1: Day 2 Checked-in staff
+    ws_checked_in = wb.active
+    ws_checked_in.title = "Day 2 - Checked In"
+
+    # Sheet 2: Day 2 Not checked-in staff
+    ws_not_checked_in = wb.create_sheet("Day 2 - Not Checked In")
+
+    # Define headers
+    checked_headers = ['Staff ID', 'Name', 'Department', 'Check-in Time']
+    not_checked_headers = ['Staff ID', 'Name', 'Department']
+
+    # Style headers
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="9BBB59", end_color="9BBB59", fill_type="solid")  # Green for Day 2
+
+    # Function to style headers
+    def style_headers(worksheet, headers, fill_color):
+        for col_num, header in enumerate(headers, 1):
+            cell = worksheet.cell(row=1, column=col_num)
+            cell.value = header
+            cell.font = header_font
+            cell.fill = fill_color
+            cell.alignment = Alignment(horizontal='center')
+
+    # Function to auto-adjust column widths
+    def adjust_column_widths(worksheet):
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = (max_length + 2)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+
+    # Day 2 Checked In
+    style_headers(ws_checked_in, checked_headers, header_fill)
+    day2_checkins = CheckIn.objects.filter(day=2).select_related('staff').order_by('-checked_in_at')
+
+    row_num = 2
+    for checkin in day2_checkins:
+        ws_checked_in.cell(row=row_num, column=1).value = checkin.staff.id
+        ws_checked_in.cell(row=row_num, column=2).value = checkin.staff.name
+        ws_checked_in.cell(row=row_num, column=3).value = checkin.staff.department
+        ws_checked_in.cell(row=row_num, column=4).value = checkin.checked_in_at.strftime("%Y-%m-%d %H:%M:%S")
+        row_num += 1
+    adjust_column_widths(ws_checked_in)
+
+    # Day 2 Not Checked In
+    style_headers(ws_not_checked_in, not_checked_headers, header_fill)
+    day2_staff = Staff.objects.filter(day_1=2)
+    day2_checked_ids = CheckIn.objects.filter(day=2).values_list('staff_id', flat=True)
+
+    row_num = 2
+    for staff in day2_staff:
+        if staff.id not in day2_checked_ids:
+            ws_not_checked_in.cell(row=row_num, column=1).value = staff.id
+            ws_not_checked_in.cell(row=row_num, column=2).value = staff.name
+            ws_not_checked_in.cell(row=row_num, column=3).value = staff.department
+            row_num += 1
+    adjust_column_widths(ws_not_checked_in)
+
+    # Create response
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    current_time = timezone.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"day2_checkin_report_{current_time}.xlsx"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+    # Save workbook to response
+    wb.save(response)
+    return response
 
 @login_required
 def view_winners(request):
@@ -468,3 +835,106 @@ def clear_database(request):
         messages.success(request, 'Database cleared!')
         return redirect('dashboard')
     return render(request, 'lucky_draw/clear_db_confirm.html', {'clear_db_enabled': clear_db_enabled})
+
+@login_required
+def download_template_image(request, day):
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import qrcode
+        from io import BytesIO
+
+        # Get event settings
+        event_settings = EventSettings.get_solo()
+        if not event_settings:
+            return HttpResponse("Event settings not found. Please set event dates first.", status=400)
+
+        # Get the date for the specific day
+        if day == 1:
+            event_date = event_settings.day1_date
+            template_path = 'static/templates/day-1-lucky-draw.png'
+            qr_coords = (504, 1569, 1083, 2151)
+            date_coords = (459, 1355, 1125, 1446)
+        elif day == 2:
+            event_date = event_settings.day2_date
+            template_path = 'static/templates/day-2-lucky-draw.png'
+            qr_coords = (502, 1570, 1083, 2152)
+            date_coords = (451, 1360, 1106, 1445)
+        else:
+            return HttpResponse("Invalid day specified.", status=400)
+
+        if not event_date:
+            return HttpResponse(f"Date for Day {day} not set.", status=400)
+
+        # Load the template image
+        template_full_path = os.path.join(settings.BASE_DIR, template_path)
+        if not os.path.exists(template_full_path):
+            return HttpResponse("Template image not found.", status=404)
+
+        template_img = Image.open(template_full_path)
+        draw = ImageDraw.Draw(template_img)
+
+        # Generate QR code with event information
+        qr_data = f"STAFF_LUCKY_DRAW_DAY_{day}_{event_date.strftime('%Y%m%d')}"
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+
+        # Resize QR code to fit the coordinates
+        qr_width = qr_coords[2] - qr_coords[0]
+        qr_height = qr_coords[3] - qr_coords[1]
+        qr_img = qr_img.resize((qr_width, qr_height), Image.Resampling.LANCZOS)
+
+        # Paste QR code onto template
+        template_img.paste(qr_img, (qr_coords[0], qr_coords[1]))
+
+        # Add date text
+        try:
+            # Use Poppins font
+            font_path = os.path.join(settings.BASE_DIR, 'static/fonts/Poppins-Regular.ttf')
+            if os.path.exists(font_path):
+                # Convert 63.7pt to pixels (approximately 84 pixels at 72 DPI)
+                font_size = int(63.7 * 1.33)  # Rough conversion from pt to px
+                font = ImageFont.truetype(font_path, font_size)
+            else:
+                # Fallback fonts
+                try:
+                    font = ImageFont.truetype("arial.ttf", 84)
+                except:
+                    try:
+                        font = ImageFont.truetype("DejaVuSans.ttf", 84)
+                    except:
+                        # Final fallback to default
+                        font = ImageFont.load_default()
+        except:
+            font = ImageFont.load_default()
+
+        date_text = event_date.strftime("%d %B %Y").upper()
+        bbox = draw.textbbox((0, 0), date_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+
+        # Center the text in the date coordinates
+        date_x = date_coords[0] + (date_coords[2] - date_coords[0] - text_width) // 2
+        date_y = date_coords[1] + (date_coords[3] - date_coords[1] - text_height) // 2
+
+        # Draw the date text
+        draw.text((date_x, date_y), date_text, fill="white", font=font)
+
+        # Save the modified image to BytesIO
+        output = BytesIO()
+        template_img.save(output, format='PNG')
+        output.seek(0)
+
+        # Return the image as a download
+        response = HttpResponse(output.getvalue(), content_type='image/png')
+        response['Content-Disposition'] = f'attachment; filename="day-{day}-lucky-draw-template.png"'
+        return response
+
+    except Exception as e:
+        return HttpResponse(f"Error generating template image: {str(e)}", status=500)

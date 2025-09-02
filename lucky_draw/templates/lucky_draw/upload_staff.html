@@ -19,6 +19,10 @@
                         <div class="mb-4">
                             {{ form.file.label_tag }}
                             {{ form.file }}
+                            <div class="alert alert-warning mt-2 mb-2">
+                                <strong><i class="fas fa-exclamation-circle me-1"></i> Name length limit:</strong>
+                                Names are limited to <strong>35 characters</strong>. Any name in the uploaded file longer than 35 characters will be <strong>automatically truncated</strong> to the first 35 characters.
+                            </div>
                             {% if form.file.help_text %}
                                 <div class="form-text">{{ form.file.help_text }}</div>
                             {% endif %}
@@ -76,6 +80,10 @@
                         <div class="mb-3">
                             {{ manual_form.name.label_tag }}
                             {{ manual_form.name }}
+                            <div class="alert alert-info mt-1 p-2 small">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Name must be <strong>35 characters or less</strong> when added manually.
+                            </div>
                             {% if manual_form.name.errors %}
                                 <div class="text-danger">{% for error in manual_form.name.errors %}{{ error }}{% endfor %}</div>
                             {% endif %}

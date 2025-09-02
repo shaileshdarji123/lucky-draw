@@ -12,9 +12,9 @@
                     <div class="text-center mb-4">
                         <i class="fas fa-qrcode fa-3x text-primary mb-3"></i>
                         <h3 class="fw-bold">Scan QR Code</h3>
-                        <p class="text-muted">Check-in staff using their QR codes</p>
+                        <p class="text-muted">Staff will be checked in automatically upon QR scan</p>
                     </div>
-                    
+
                     <div class="qr-scanner-container mb-4">
                         <div id="qr-reader"></div>
                     </div>
@@ -27,12 +27,7 @@
                         </button>
                     </div>
                     <canvas id="qr-canvas" style="display:none;"></canvas>
-                    
-                    <div id="scan-result" class="alert alert-dismissible" style="display: none;">
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        <div id="result-message"></div>
-                    </div>
-                    
+
                     <div class="text-center">
                         <button class="btn btn-secondary" onclick="window.location.href='{% url 'dashboard' %}'">
                             <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
@@ -42,7 +37,80 @@
             </div>
         </div>
     </div>
+
+    <!-- Result Modal - Moved outside card for proper overlay -->
+    <div class="modal fade" id="resultModal" tabindex="-1" aria-labelledby="resultModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header" id="modal-header">
+                    <h5 class="modal-title" id="resultModalLabel">
+                        <i class="fas fa-check-circle me-2"></i>Scan Result
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center" id="modal-body">
+                    <div id="modal-message"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="scan-again-btn">
+                        <i class="fas fa-redo me-2"></i>Scan Again
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Toast container for scan results -->
+    <div id="toast-container" style="position: fixed; top: 1rem; right: 1rem; z-index: 11000;">
+    </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Ensure modal appears as overlay on entire screen */
+#resultModal {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 9999 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background-color: rgba(0, 0, 0, 0.5) !important;
+    display: none;
+}
+
+#resultModal.show {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+#resultModal .modal-dialog {
+    position: relative !important;
+    z-index: 10000 !important;
+    max-width: 500px !important;
+    width: 90% !important;
+    margin: 0 auto !important;
+}
+
+#resultModal .modal-content {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3) !important;
+    border: none !important;
+    border-radius: 15px !important;
+}
+
+/* Ensure modal buttons are clickable */
+#resultModal .modal-header .btn-close,
+#resultModal .modal-footer .btn {
+    pointer-events: auto !important;
+    z-index: 10001 !important;
+}
+
+/* Prevent body scroll when modal is open */
+body.modal-open {
+    overflow: hidden !important;
+}
+</style>
 {% endblock %}
 
 {% block extra_js %}
@@ -55,7 +123,14 @@ function onScanSuccess(decodedText, decodedResult) {
     if (html5QrcodeScanner) {
         html5QrcodeScanner.clear();
     }
-    processQRCode(decodedText);
+    // processQRCode now returns a promise so we can restart the scanner afterwards
+    processQRCode(decodedText).finally(() => {
+        // small delay so the toast can show before reactivating camera
+        setTimeout(() => {
+            try { if (html5QrcodeScanner) html5QrcodeScanner.clear(); } catch(e) {}
+            startScanner();
+        }, 600);
+    });
 }
 
 function onScanFailure(error) {
@@ -63,107 +138,70 @@ function onScanFailure(error) {
 }
 
 function processQRCode(qrData) {
-    // Decode QR to get staff info for confirmation
-    // Parse staff_id and day from QR data
-    let staffId = null, day = null;
-    try {
-        const parts = qrData.split(':');
-        staffId = parts[0];
-        day = parts[1];
-    } catch (e) {
-        showResult({success: false, message: 'Invalid QR code format.'});
-        return;
-    }
-    // Fetch staff info for confirmation
-    fetch('/preview-qr-svg/' + staffId + '/', {
-        method: 'GET'
+    // Process QR code directly without confirmation
+    return fetch('{% url "process_qr_scan" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.getElementById('csrf-token').value
+        },
+        body: JSON.stringify({qr_data: qrData})
     })
-    .then(response => response.text())
-    .then(svg => {
-        // Optionally parse SVG label for staff info, or just ask for confirmation
-        if (!confirm(`Check in staff ID ${staffId} for Day ${day}?`)) {
-            restartScanner();
-            return;
-        }
-        // Only call check-in API if confirmed
-        fetch('{% url "process_qr_scan" %}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.getElementById('csrf-token').value
-            },
-            body: JSON.stringify({qr_data: qrData})
-        })
-        .then(response => response.json())
-        .then(data => {
-            showResult(data);
-        })
-        .catch(error => {
-            showResult({success: false, message: 'An error occurred while processing the QR code.'});
-        });
+    .then(response => response.json())
+    .then(data => {
+        showResult(data);
+        return data;
     })
-    .catch(() => {
-        // If preview fails, still ask for confirmation
-        if (!confirm(`Check in staff ID ${staffId} for Day ${day}?`)) {
-            restartScanner();
-            return;
-        }
-        fetch('{% url "process_qr_scan" %}', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.getElementById('csrf-token').value
-            },
-            body: JSON.stringify({qr_data: qrData})
-        })
-        .then(response => response.json())
-        .then(data => {
-            showResult(data);
-        })
-        .catch(error => {
-            showResult({success: false, message: 'An error occurred while processing the QR code.'});
-        });
+    .catch(error => {
+        showResult({success: false, message: 'An error occurred while processing the QR code.'});
+        throw error;
     });
 }
 
 function showResult(data) {
-    const resultDiv = document.getElementById('scan-result');
-    const messageDiv = document.getElementById('result-message');
-    if (data.success) {
-        resultDiv.className = 'alert alert-success alert-dismissible';
-        messageDiv.innerHTML = `
-            <h5><i class="fas fa-check-circle me-2"></i>Check-in Successful!</h5>
-            <p><strong>${data.staff_name}</strong> from <strong>${data.department}</strong></p>
-            <p>Successfully checked in for <strong>Day ${data.day}</strong></p>
-        `;
-    } else {
-        resultDiv.className = 'alert alert-danger alert-dismissible';
-        messageDiv.innerHTML = `
-            <h5><i class="fas fa-exclamation-triangle me-2"></i>Check-in Failed</h5>
-            <p>${data.message}</p>
-        `;
-    }
-    // Add Scan Again button
-    messageDiv.innerHTML += `<div class='mt-3'><button class='btn btn-primary' id='scan-again-btn'><i class='fas fa-redo me-2'></i>Scan Again</button></div>`;
-    resultDiv.style.display = 'block';
-    document.getElementById('scan-again-btn').onclick = function() {
-        resultDiv.style.display = 'none';
-        restartScanner();
-    };
-}
+    // Show a toast message instead of a modal. Keep the message minimal: success or failure.
+    function showToast(data) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
 
-function restartScanner() {
-    if (html5QrcodeScanner) {
-        html5QrcodeScanner.clear();
+        // Create toast element
+        const toastEl = document.createElement('div');
+        toastEl.className = 'toast align-items-center text-white border-0';
+        toastEl.setAttribute('role', 'alert');
+        toastEl.setAttribute('aria-live', 'assertive');
+        toastEl.setAttribute('aria-atomic', 'true');
+
+        let bodyHtml = '';
+        if (data.success) {
+            toastEl.classList.add('bg-success');
+            const name = data.staff_name ? `<strong>${data.staff_name}</strong> ` : '';
+            bodyHtml = `${name}checked in for Day ${data.day}`;
+        } else {
+            toastEl.classList.add('bg-danger');
+            bodyHtml = data.message || 'Check-in failed';
+        }
+
+        toastEl.innerHTML = `
+            <div class="d-flex">
+                <div class="toast-body">${bodyHtml}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        `;
+
+        container.appendChild(toastEl);
+        const bsToast = new bootstrap.Toast(toastEl, { delay: 3500 });
+        bsToast.show();
+        toastEl.addEventListener('hidden.bs.toast', function () { toastEl.remove(); });
     }
-    setTimeout(startScanner, 300); // slight delay to avoid race
+    // actually invoke the toast renderer
+    try { showToast(data); } catch (e) { console.error('Failed to show toast', e); }
 }
 
 function startScanner() {
     html5QrcodeScanner = new Html5QrcodeScanner(
         "qr-reader",
-        { 
-            fps: 10, 
+        {
+            fps: 10,
             qrbox: {width: 250, height: 250},
             aspectRatio: 1.0
         },
@@ -187,21 +225,24 @@ function scanImageFile(file) {
             const imageData = ctx.getImageData(0, 0, img.width, img.height);
             const code = jsQR(imageData.data, img.width, img.height);
             if (code) {
-                processQRCode(code.data);
+                // process and then restart scanner
+                processQRCode(code.data).finally(() => {
+                    setTimeout(() => {
+                        startScanner();
+                    }, 600);
+                });
             } else {
-                const resultDiv = document.getElementById('scan-result');
-                const messageDiv = document.getElementById('result-message');
-                resultDiv.className = 'alert alert-danger';
-                messageDiv.innerHTML = `<h5><i class='fas fa-exclamation-triangle me-2'></i>Scan Failed</h5><p>Could not detect a QR code in the selected image.</p>`;
-                resultDiv.style.display = 'block';
-                setTimeout(() => {
-                    resultDiv.style.display = 'none';
-                    startScanner();
-                }, 3000);
+                // Show a toast error and restart scanner
+                showResult({success: false, message: 'Could not detect a QR code in the selected image.'});
+                document.getElementById('qr-image-input').value = '';
+                setTimeout(() => startScanner(), 600);
             }
         };
         img.onerror = function() {
-            alert('Could not load the image file.');
+            // Show a toast error and restart scanner
+            showResult({success: false, message: 'Could not load the selected image file.'});
+            document.getElementById('qr-image-input').value = '';
+            setTimeout(() => startScanner(), 600);
         };
         img.src = e.target.result;
     };
@@ -217,9 +258,40 @@ document.addEventListener('DOMContentLoaded', function() {
                 html5QrcodeScanner.clear();
             }
             scanImageFile(fileInput.files[0]);
+            // Clear the file input immediately after starting scan
+            fileInput.value = '';
         } else {
-            alert('Please select an image file first.');
+            const modal = new bootstrap.Modal(document.getElementById('resultModal'));
+            const modalHeader = document.getElementById('modal-header');
+            const modalBody = document.getElementById('modal-body');
+            const messageDiv = document.getElementById('modal-message');
+
+            modalHeader.className = 'modal-header bg-warning text-white';
+            modalBody.className = 'modal-body text-center text-warning';
+            messageDiv.innerHTML = `
+                <i class="fas fa-exclamation-triangle fa-3x mb-3 text-warning"></i>
+                <h4>No File Selected</h4>
+                <p>Please select an image file first.</p>
+            `;
+
+            // Prevent body scroll when modal is shown
+            document.body.classList.add('modal-open');
+
+            modal.show();
+
+            // Handle modal close events to refresh the page
+            document.getElementById('resultModal').addEventListener('hidden.bs.modal', function () {
+                document.body.classList.remove('modal-open');
+                location.reload();
+            });
+
+            // Handle scan again button
+            document.getElementById('scan-again-btn').onclick = function() {
+                modal.hide();
+            };
         }
+        // Clear the file input after showing warning
+        document.getElementById('qr-image-input').value = '';
     });
 });
 </script>
