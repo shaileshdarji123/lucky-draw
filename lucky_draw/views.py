@@ -1,5 +1,5 @@
 from django.http import HttpResponse, JsonResponse, FileResponse
-from io import BytesIO
+from io import BytesIO, StringIO
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -387,14 +387,55 @@ def upload_staff(request):
             if upload_form.is_valid():
                 try:
                     file = request.FILES['file']
-                    if file.name.endswith('.csv'):
-                        df = pd.read_csv(file)
+                    # Read uploaded content into memory once (works for UploadedFile)
+                    try:
+                        file_bytes = file.read()
+                    except Exception as e:
+                        messages.error(request, f'Error reading uploaded file: {str(e)}')
+                        return redirect('upload_staff')
+
+                    # Try multiple encodings for CSV files to handle files exported from Windows/Excel
+                    if file.name.lower().endswith('.csv'):
+                        encodings = ['utf-8', 'utf-8-sig', 'cp1252', 'latin-1']
+                        df = None
+                        last_exc = None
+                        for enc in encodings:
+                            try:
+                                decoded = file_bytes.decode(enc)
+                                # Use StringIO so pandas can read from text
+                                df = pd.read_csv(StringIO(decoded))
+                                break
+                            except Exception as e:
+                                last_exc = e
+                                continue
+                        if df is None:
+                            messages.error(request, f'Error processing file: unable to decode CSV. Please save the file as UTF-8 or try a different encoding. ({str(last_exc)})')
+                            return redirect('upload_staff')
                     else:
-                        df = pd.read_excel(file)
+                        # For Excel files, pass a BytesIO to pandas
+                        try:
+                            df = pd.read_excel(BytesIO(file_bytes))
+                        except Exception as e:
+                            messages.error(request, f'Error processing Excel file: {str(e)}')
+                            return redirect('upload_staff')
+                    import unicodedata
+                    # Clear existing staff before import
                     Staff.objects.all().delete()
+                    # Basic validation of dataframe shape
+                    if df.shape[1] < 3:
+                        messages.error(request, 'Uploaded file must have at least three columns: Staff Name, Department, Day')
+                        return redirect('upload_staff')
+
+                    def normalize_name(val):
+                        if pd.isna(val):
+                            return ''
+                        s = str(val).strip()
+                        # Normalize unicode to composed form and remove weird control characters
+                        s = unicodedata.normalize('NFKC', s)
+                        return s
+
                     for index, row in df.iterrows():
-                        staff_name = row.iloc[0]
-                        staff_name = str(row.iloc[0]).strip()
+                        staff_name = normalize_name(row.iloc[0])
                         # Truncate imported names to 35 chars as required
                         if len(staff_name) > 35:
                             staff_name = staff_name[:35]
